@@ -1,5 +1,6 @@
 #include "sphere.h"
 
+#include <algorithm>
 #include <cmath>
 
 using namespace std;
@@ -20,11 +21,24 @@ Sphere::Sphere(Point const &pos, double radius, Vector const &axis, double angle
  */
 optional<Hit> Sphere::intersect(Ray const &ray) {
     // 2.1: Sphere intersection
-    // Placeholder for actual intersection calculation.
-    Vector originToPosition = (position - ray.O).normalized();
-    if (originToPosition.dot(ray.D) < 0.999) return nullopt;
+    Vector OC = ray.O - position;
 
-    double t = 1000;
+    double a = ray.D.dot(ray.D);
+    double b = 2.0 * OC.dot(ray.D);
+    double c = OC.dot(OC) - r * r;
+
+    double t0, t1;
+    if (!quadratic(a, b, c, t0, t1))
+        return nullopt;
+
+    if (t0 > t1)
+        std::swap(t0, t1);
+
+    double t = t0;
+    if (t < 0.0)
+        t = t1;
+    if (t < 0.0)
+        return nullopt;
 
     // 2.2.1: Normal calculation
     Vector N(0, 0, 0);
@@ -41,5 +55,12 @@ optional<Hit> Sphere::intersect(Ray const &ray) {
  */
 bool Sphere::quadratic(double a, double b, double c, double &t0, double &t1) {
     // 2.1: Sphere intersection
-    return false;
+    double discriminant = b * b - 4.0 * a * c;
+    if (discriminant < 0.0)
+        return false;
+
+    double sqrtDiscriminant = std::sqrt(discriminant);
+    t0 = (-b - sqrtDiscriminant) / (2.0 * a);
+    t1 = (-b + sqrtDiscriminant) / (2.0 * a);
+    return true;
 }
