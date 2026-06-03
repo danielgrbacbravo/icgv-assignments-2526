@@ -3,7 +3,8 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 FRAMEWORK_DIR="$SCRIPT_DIR/icgv-volumetric-ray-tracer"
-OUTPUT="$SCRIPT_DIR/icgv-submission.tar.gz"
+TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+OUTPUT="$SCRIPT_DIR/icgv-submission-$TIMESTAMP.zip"
 
 if [ ! -d "$FRAMEWORK_DIR" ]; then
     echo "Error: framework directory not found: $FRAMEWORK_DIR" >&2
@@ -22,8 +23,15 @@ fi
 
 rm -f "$OUTPUT"
 
-tar -czf "$OUTPUT" -C "$FRAMEWORK_DIR" CMakeLists.txt src
+(
+    cd "$FRAMEWORK_DIR"
+    zip -r -X "$OUTPUT" CMakeLists.txt src \
+        -x "*.DS_Store" \
+        -x "*/.DS_Store" \
+        -x "._*" \
+        -x "*/._*"
+)
 
 echo "Created $OUTPUT"
 echo "Archive contents:"
-tar -tzf "$OUTPUT"
+unzip -l "$OUTPUT"
