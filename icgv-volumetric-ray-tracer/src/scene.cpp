@@ -7,6 +7,7 @@
 #include "volumes/volume.h"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 
 using namespace std;
@@ -66,11 +67,31 @@ Color Scene::shadePixel(unsigned px, unsigned py, unsigned w,
  */
 Color Scene::trace(Ray const &ray) const {
   Color color;
+  double opacity = 0.0;
 
   optional<Hit> objectHit = intersectObjects(ray);
+  vector<Segment> volumeHits = intersectVolumes(ray);
 
-  if (objectHit)
-    color = shadeHit(objectHit.value(), ray);
+  for (Segment segment : volumeHits) {
+    if (objectHit && objectHit->t <= segment.t1) {
+      color += (1.0 - opacity) * shadeHit(objectHit.value(), ray);
+      opacity = 1.0;
+      break;
+    }
+
+    if (objectHit && objectHit->t < segment.t2)
+      segment.cap(objectHit->t);
+
+    std::pair<Color, double> segmentShading = shadeSegment(segment, ray);
+    color += (1.0 - opacity) * segmentShading.first;
+    opacity += (1.0 - opacity) * segmentShading.second;
+
+    if (opacity > 0.99)
+      break;
+  }
+
+  if (objectHit && opacity <= 0.99)
+    color += (1.0 - opacity) * shadeHit(objectHit.value(), ray);
 
   color.clamp();
   return color;
@@ -163,8 +184,22 @@ pair<Color, double> Scene::shadeSegment(Segment const &segment,
   [[maybe_unused]] Vector V = -ray.D;
 
   // 3.2: Compositing
-  opacity = 0.5;
-  color = Color(1.0, 1.0, 1.0) * opacity; // Use a pre-multiplied color.
+  // damn floating point bull
+  int const steps = static_cast<int>(std::ceil(segment.length() / tStep));
+  if (steps <= 0)
+    return {color, opacity};
+
+  for (int i = 0; i <= steps; ++i) {
+    double const t = segment.t1 + i * segment.length() / steps;
+    Sample sample = volume->sample(ray.at(t), volumeTrilinear);
+    sample.color = volume->data.ka * sample.color;
+
+    color += (1.0 - opacity) * sample.color;
+    opacity += (1.0 - opacity) * sample.opacity;
+
+    if (opacity > 0.99)
+      break;
+  }
 
   // 3.4: Diffuse shading
 

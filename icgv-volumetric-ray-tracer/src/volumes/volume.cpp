@@ -7,19 +7,17 @@
 
 using namespace std;
 
-Volume::Volume(Point const &aa, Point const &bb, DensityField data, TransferFunction tf)
-:   aa(aa), bb(bb),
-    width(bb.x - aa.x), height(bb.y - aa.y), depth(bb.z - aa.z),
-    data(std::move(data)),
-    minVoxelSize(std::min({
-        static_cast<double>(width) / data.width,
-        static_cast<double>(height) / data.height,
-        static_cast<double>(depth) / data.depth
-    })),
-    transferFunction(std::move(tf))
-{
-    if (aa.x > bb.x || aa.y > bb.y || aa.z > bb.z)
-        throw runtime_error("Invalid volume bounds, make sure AA <= BB in all dimensions.");
+Volume::Volume(Point const &aa, Point const &bb, DensityField data,
+               TransferFunction tf)
+    : aa(aa), bb(bb), width(bb.x - aa.x), height(bb.y - aa.y),
+      depth(bb.z - aa.z), data(std::move(data)),
+      minVoxelSize(std::min({static_cast<double>(width) / data.width,
+                             static_cast<double>(height) / data.height,
+                             static_cast<double>(depth) / data.depth})),
+      transferFunction(std::move(tf)) {
+  if (aa.x > bb.x || aa.y > bb.y || aa.z > bb.z)
+    throw runtime_error(
+        "Invalid volume bounds, make sure AA <= BB in all dimensions.");
 }
 
 /**
@@ -30,11 +28,32 @@ Volume::Volume(Point const &aa, Point const &bb, DensityField data, TransferFunc
  * std::nullopt in case the ray does not intersect the volume.
  */
 optional<Segment> Volume::intersect(Ray const &ray) {
-    // 3.1: Intersecting the volume domain
-    double const tNear = 100;
-    double const tFar = 1000;
+  // 3.1: Intersecting the volume domain
+  double tx1 = (aa.x - ray.O.x) / ray.D.x;
+  double tx2 = (bb.x - ray.O.x) / ray.D.x;
 
-    return Segment(tNear, tFar, shared_from_this());
+  double ty1 = (aa.y - ray.O.y) / ray.D.y;
+  double ty2 = (bb.y - ray.O.y) / ray.D.y;
+
+  double tz1 = (aa.z - ray.O.z) / ray.D.z;
+  double tz2 = (bb.z - ray.O.z) / ray.D.z;
+
+  double txNear = std::min(tx1, tx2);
+  double txFar = std::max(tx1, tx2);
+  double tyNear = std::min(ty1, ty2);
+  double tyFar = std::max(ty1, ty2);
+  double tzNear = std::min(tz1, tz2);
+  double tzFar = std::max(tz1, tz2);
+
+  double tNear = std::max({txNear, tyNear, tzNear});
+  double tFar = std::min({txFar, tyFar, tzFar});
+
+  if (tNear > tFar || tFar < 0.0)
+    return std::nullopt;
+
+  tNear = std::max(0.0, tNear);
+
+  return Segment(tNear, tFar, shared_from_this());
 }
 
 /**
@@ -45,9 +64,10 @@ optional<Segment> Volume::intersect(Ray const &ray) {
  * given point, according to the transfer function.
  */
 Sample Volume::sample(Point const &point, bool doTrilinear) const {
-    // 3.3: Sampling the actual data
-    double opacity = 0.005;
-    return {Color(1.0, 1.0, 1.0) * opacity, opacity}; // Use a pre-multiplied color.
+  // 3.3: Sampling the actual data
+  double opacity = 0.005;
+  return {Color(1.0, 1.0, 1.0) * opacity,
+          opacity}; // Use a pre-multiplied color.
 }
 
 /**
@@ -60,6 +80,6 @@ Sample Volume::sample(Point const &point, bool doTrilinear) const {
  * @return A Vector representing the gradient vector at the given point.
  */
 Vector Volume::gradient(Point const &point, bool doTrilinear) const {
-    // 3.4: Diffuse shading
-    return sample(point, doTrilinear).color;
+  // 3.4: Diffuse shading
+  return sample(point, doTrilinear).color;
 }

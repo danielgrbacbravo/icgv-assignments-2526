@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "base_url": "https://themis.housing.rug.nl",
+  "linked_root_url": "https://themis.housing.rug.nl/course/2025-2026/icgv",
+  "linked_root_node_id": "url:799be9fa35036ae9ec870ea7e12af2ec2a2490adca27de93163e262190c219e0",
+  "last_download_dir": ".",
+  "recent_asset_choices": {
+    "url:b55391db64e0859bebacd92643c0e30235358e2add251bf07023ec49cc04c717": [
+      "https://themis.housing.rug.nl/file/2025-2026/icgv/3_multilights/%40tests/1.in",
+      "https://themis.housing.rug.nl/file/2025-2026/icgv/3_multilights/%40tests/1.out"
+    ]
+  },
+  "preferences": {
+    "default_refresh_depth": 1,
+    "auto_refresh_on_open": false,
+    "show_stale_warning_after_minutes": 120
+  },
+  "updated_at": "2026-05-28T06:44:54.892891Z"
+}
