@@ -3,6 +3,7 @@
 #include "segment.h"
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 
 using namespace std;
@@ -29,24 +30,30 @@ Volume::Volume(Point const &aa, Point const &bb, DensityField data,
  */
 optional<Segment> Volume::intersect(Ray const &ray) {
   // 3.1: Intersecting the volume domain
-  double tx1 = (aa.x - ray.O.x) / ray.D.x;
-  double tx2 = (bb.x - ray.O.x) / ray.D.x;
+  auto slab = [](double origin, double direction, double minBound,
+                 double maxBound) -> optional<pair<double, double>> {
+    if (direction == 0.0) {
+      if (origin < minBound || origin > maxBound)
+        return std::nullopt;
 
-  double ty1 = (aa.y - ray.O.y) / ray.D.y;
-  double ty2 = (bb.y - ray.O.y) / ray.D.y;
+      double const infinity = std::numeric_limits<double>::infinity();
+      return pair<double, double>(-infinity, infinity);
+    }
 
-  double tz1 = (aa.z - ray.O.z) / ray.D.z;
-  double tz2 = (bb.z - ray.O.z) / ray.D.z;
+    double const t1 = (minBound - origin) / direction;
+    double const t2 = (maxBound - origin) / direction;
+    return pair<double, double>(std::min(t1, t2), std::max(t1, t2));
+  };
 
-  double txNear = std::min(tx1, tx2);
-  double txFar = std::max(tx1, tx2);
-  double tyNear = std::min(ty1, ty2);
-  double tyFar = std::max(ty1, ty2);
-  double tzNear = std::min(tz1, tz2);
-  double tzFar = std::max(tz1, tz2);
+  optional<pair<double, double>> tx = slab(ray.O.x, ray.D.x, aa.x, bb.x);
+  optional<pair<double, double>> ty = slab(ray.O.y, ray.D.y, aa.y, bb.y);
+  optional<pair<double, double>> tz = slab(ray.O.z, ray.D.z, aa.z, bb.z);
 
-  double tNear = std::max({txNear, tyNear, tzNear});
-  double tFar = std::min({txFar, tyFar, tzFar});
+  if (!tx || !ty || !tz)
+    return std::nullopt;
+
+  double tNear = std::max({tx->first, ty->first, tz->first});
+  double tFar = std::min({tx->second, ty->second, tz->second});
 
   if (tNear > tFar || tFar < 0.0)
     return std::nullopt;
@@ -65,9 +72,13 @@ optional<Segment> Volume::intersect(Ray const &ray) {
  */
 Sample Volume::sample(Point const &point, bool doTrilinear) const {
   // 3.3: Sampling the actual data
-  double opacity = 0.005;
-  return {Color(1.0, 1.0, 1.0) * opacity,
-          opacity}; // Use a pre-multiplied color.
+  double const xPercent = (point.x - aa.x) / (bb.x - aa.x);
+  double const yPercent = (point.y - aa.y) / (bb.y - aa.y);
+  double const zPercent = (point.z - aa.z) / (bb.z - aa.z);
+  double const density =
+      data.densityAt(xPercent, yPercent, zPercent, doTrilinear);
+
+  return transferFunction(density);
 }
 
 /**

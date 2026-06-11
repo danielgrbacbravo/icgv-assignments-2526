@@ -66,32 +66,34 @@ Color Scene::shadePixel(unsigned px, unsigned py, unsigned w,
  * @return The color of the ray, in the range [0, 1].
  */
 Color Scene::trace(Ray const &ray) const {
-  Color color;
-  double opacity = 0.0;
+  Color color(0.0, 0.0, 0.0);
+  double accumulated_opacity = 0.0;
 
-  optional<Hit> objectHit = intersectObjects(ray);
-  vector<Segment> volumeHits = intersectVolumes(ray);
+  optional<Hit> const objectHit = intersectObjects(ray);
+  vector<Segment> const volumeHits = intersectVolumes(ray);
 
   for (Segment segment : volumeHits) {
-    if (objectHit && objectHit->t <= segment.t1) {
-      color += (1.0 - opacity) * shadeHit(objectHit.value(), ray);
-      opacity = 1.0;
+    // Skip segments behind or at the object hit point
+    if (objectHit && segment.t1 >= objectHit->t)
       break;
-    }
 
-    if (objectHit && objectHit->t < segment.t2)
+    // Trim the segment to stop at the object hit point
+    if (objectHit)
       segment.cap(objectHit->t);
+    if (segment.length() <= 0.0)
+      continue;
 
-    std::pair<Color, double> segmentShading = shadeSegment(segment, ray);
-    color += (1.0 - opacity) * segmentShading.first;
-    opacity += (1.0 - opacity) * segmentShading.second;
+    auto const [segmentColor, segmentOpacity] = shadeSegment(segment, ray);
+    double transmittance = 1.0 - accumulated_opacity;
+    color += transmittance * segmentColor;
+    accumulated_opacity += transmittance * segmentOpacity;
 
-    if (opacity > 0.99)
+    if (accumulated_opacity > 0.99)
       break;
   }
 
-  if (objectHit && opacity <= 0.99)
-    color += (1.0 - opacity) * shadeHit(objectHit.value(), ray);
+  if (objectHit && accumulated_opacity < 1.0)
+    color += (1.0 - accumulated_opacity) * shadeHit(objectHit.value(), ray);
 
   color.clamp();
   return color;
@@ -153,13 +155,14 @@ Color Scene::shadeHit(Hit const &min_hit, Ray const &ray) const {
       // normalize it for da math
       Vector L = toLight.normalized();
 
-      // i completely forgot about the epsilon that took me forever to figure
-      // out :/
+      if (N.dot(L) <= 0.0)
+        continue;
+
       Ray shadowRay = Ray(hit + epsilon * N, L);
       std::optional<Hit> shadowHit = intersectObjects(shadowRay);
 
       bool lightVisible = !shadowHit || shadowHit->t > distanceToLight;
-      if (lightVisible && N.dot(L) > 0.0) {
+      if (lightVisible) {
         color += material.kd * material.color * currentLight.color * N.dot(L);
       }
     }
@@ -184,23 +187,32 @@ pair<Color, double> Scene::shadeSegment(Segment const &segment,
   [[maybe_unused]] Vector V = -ray.D;
 
   // 3.2: Compositing
-  // damn floating point bull
+  if (segment.length() <= 0.0 || tStep <= 0.0)
+    return {color, opacity};
+
   int const steps = static_cast<int>(std::ceil(segment.length() / tStep));
   if (steps <= 0)
     return {color, opacity};
 
-  for (int i = 0; i <= steps; ++i) {
-    double const t = segment.t1 + i * segment.length() / steps;
+  for (int i = 0; i < steps; ++i) {
+    double const transmittance = 1.0 - opacity;
+    if (transmittance <= 0.01) {
+      opacity = 1.0;
+      break;
+    }
+
+    double const t = segment.t1 + i * tStep;
     Sample sample = volume->sample(ray.at(t), volumeTrilinear);
     sample.color = volume->data.ka * sample.color;
 
-    color += (1.0 - opacity) * sample.color;
-    opacity += (1.0 - opacity) * sample.opacity;
+    color += transmittance * sample.color;
+    opacity += transmittance * sample.opacity;
 
-    if (opacity > 0.99)
+    if (opacity > 0.99) {
+      opacity = 1.0;
       break;
+    }
   }
-
   // 3.4: Diffuse shading
 
   // 3.5: Shadows
