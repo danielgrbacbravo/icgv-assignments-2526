@@ -92,5 +92,35 @@ Sample Volume::sample(Point const &point, bool doTrilinear) const {
  */
 Vector Volume::gradient(Point const &point, bool doTrilinear) const {
   // 3.4: Diffuse shading
-  return sample(point, doTrilinear).color;
+  double const xVoxelSize = (bb.x - aa.x) / static_cast<double>(data.width);
+  double const yVoxelSize = (bb.y - aa.y) / static_cast<double>(data.height);
+  double const zVoxelSize = (bb.z - aa.z) / static_cast<double>(data.depth);
+
+  double const stepLeft = std::min(point.x - aa.x, xVoxelSize);
+  double const stepRight = std::min(bb.x - point.x, xVoxelSize);
+  double const stepDown = std::min(point.y - aa.y, yVoxelSize);
+  double const stepUp = std::min(bb.y - point.y, yVoxelSize);
+  double const stepBack = std::min(point.z - aa.z, zVoxelSize);
+  double const stepFront = std::min(bb.z - point.z, zVoxelSize);
+
+  double const opacityLeft =
+      sample(point - Vector(stepLeft, 0.0, 0.0), doTrilinear).opacity;
+  double const opacityRight =
+      sample(point + Vector(stepRight, 0.0, 0.0), doTrilinear).opacity;
+  double const opacityDown =
+      sample(point - Vector(0.0, stepDown, 0.0), doTrilinear).opacity;
+  double const opacityUp =
+      sample(point + Vector(0.0, stepUp, 0.0), doTrilinear).opacity;
+  double const opacityBack =
+      sample(point - Vector(0.0, 0.0, stepBack), doTrilinear).opacity;
+  double const opacityFront =
+      sample(point + Vector(0.0, 0.0, stepFront), doTrilinear).opacity;
+
+  double const xGradient =
+      (opacityRight - opacityLeft) / (stepRight + stepLeft);
+  double const yGradient = (opacityUp - opacityDown) / (stepUp + stepDown);
+  double const zGradient =
+      (opacityFront - opacityBack) / (stepFront + stepBack);
+
+  return Vector(xGradient, yGradient, zGradient);
 }

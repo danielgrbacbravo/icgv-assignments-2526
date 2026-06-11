@@ -202,10 +202,33 @@ pair<Color, double> Scene::shadeSegment(Segment const &segment,
     }
 
     double const t = segment.t1 + i * tStep;
-    Sample sample = volume->sample(ray.at(t), volumeTrilinear);
-    sample.color = volume->data.ka * sample.color;
+    Point const point = ray.at(t);
+    Sample sample = volume->sample(point, volumeTrilinear);
 
-    color += transmittance * sample.color;
+    Color sampleColor = volumeData.ka * sample.color;
+
+    // 3.4: Diffuse shading
+    if (sample.opacity > 1E-6) {
+      Vector N = volume->gradient(point, volumeTrilinear);
+
+      if (N.length() > epsilon) {
+        N.normalize();
+        if (N.dot(V) < 0.0)
+          N = -N;
+
+        for (Light currentLight : lights) {
+          Vector const L = (currentLight.position - point).normalized();
+          double const diffuse = N.dot(L);
+
+          if (diffuse > 0.0) {
+            sampleColor +=
+                volumeData.kd * sample.color * currentLight.color * diffuse;
+          }
+        }
+      }
+    }
+
+    color += transmittance * sampleColor;
     opacity += transmittance * sample.opacity;
 
     if (opacity > 0.99) {
@@ -213,7 +236,6 @@ pair<Color, double> Scene::shadeSegment(Segment const &segment,
       break;
     }
   }
-  // 3.4: Diffuse shading
 
   // 3.5: Shadows
 
