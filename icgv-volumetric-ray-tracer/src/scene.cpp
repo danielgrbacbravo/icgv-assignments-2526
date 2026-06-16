@@ -148,23 +148,21 @@ Color Scene::shadeHit(Hit const &min_hit, Ray const &ray) const {
   // 2.4: Shadows
   if (renderShadows) {
     for (Light currentLight : lights) {
-      // vector from hit to the light source
-      Vector toLight = currentLight.position - hit;
-      // then its distance
-      double distanceToLight = toLight.length();
-      // normalize it for da math
-      Vector L = toLight.normalized();
+      Vector const toLight = currentLight.position - hit;
+      double const distanceToLight = toLight.length();
+      Vector const L = toLight.normalized();
+      double const diffuse = N.dot(L);
 
-      if (N.dot(L) <= 0.0)
+      if (diffuse <= 0.0)
         continue;
 
-      Ray shadowRay = Ray(hit + epsilon * N, L);
-      std::optional<Hit> shadowHit = intersectObjects(shadowRay);
+      // 3.6: Sphere and volume integration
+      Ray const shadowRay(hit + epsilon * N, L);
+      double const lightVisibility =
+          1.0 - traceShadowOcclusion(shadowRay, distanceToLight);
 
-      bool lightVisible = !shadowHit || shadowHit->t > distanceToLight;
-      if (lightVisible) {
-        color += material.kd * material.color * currentLight.color * N.dot(L);
-      }
+      color += lightVisibility * material.kd * material.color *
+               currentLight.color * diffuse;
     }
   }
 
@@ -217,12 +215,23 @@ pair<Color, double> Scene::shadeSegment(Segment const &segment,
           N = -N;
 
         for (Light currentLight : lights) {
-          Vector const L = (currentLight.position - point).normalized();
+          Vector const toLight = currentLight.position - point;
+          double const distanceToLight = toLight.length();
+          Vector const L = toLight.normalized();
           double const diffuse = N.dot(L);
 
           if (diffuse > 0.0) {
-            sampleColor +=
-                volumeData.kd * sample.color * currentLight.color * diffuse;
+            // 3.5: Shadows
+            double lightVisibility = 1.0;
+
+            if (renderShadows) {
+              Ray shadowRay(point + epsilon * L, L);
+              lightVisibility -=
+                  traceShadowOcclusion(shadowRay, distanceToLight);
+            }
+
+            sampleColor += lightVisibility * volumeData.kd * sample.color *
+                           currentLight.color * diffuse;
           }
         }
       }
@@ -237,8 +246,6 @@ pair<Color, double> Scene::shadeSegment(Segment const &segment,
     }
   }
 
-  // 3.5: Shadows
-
   return {color, opacity};
 }
 
@@ -249,7 +256,30 @@ pair<Color, double> Scene::shadeSegment(Segment const &segment,
 double Scene::traceShadowOcclusion(Ray const &shadowRay,
                                    double distanceToLight) const {
   // 3.5: Shadows
-  return 0.4;
+  optional<Hit> const objectHit = intersectObjects(shadowRay);
+  if (objectHit && objectHit->t < distanceToLight)
+    return 1.0;
+
+  double opacity = 0.0;
+  vector<Segment> const volumeHits = intersectVolumes(shadowRay);
+
+  for (Segment segment : volumeHits) {
+    if (segment.t1 >= distanceToLight)
+      break;
+
+    segment.cap(distanceToLight);
+    if (segment.length() <= 0.0)
+      continue;
+
+    double const segmentOpacity = shadeSegmentOpacity(segment, shadowRay);
+    double const transmittance = 1.0 - opacity;
+    opacity += transmittance * segmentOpacity;
+
+    if (opacity > 0.99)
+      return 1.0;
+  }
+
+  return opacity;
 }
 
 /**
@@ -261,11 +291,30 @@ double Scene::traceShadowOcclusion(Ray const &shadowRay,
 double Scene::shadeSegmentOpacity(Segment const &shadowSegment,
                                   Ray const &shadowRay) const {
   double opacity = 0.0;
-  [[maybe_unused]] double tStep =
-      tStepFactor * shadowSegment.volume->minVoxelSize;
+  double const tStep = tStepFactor * shadowSegment.volume->minVoxelSize;
 
   // 3.5: Shadows
-  opacity = 0.4;
+  if (shadowSegment.length() <= 0.0 || tStep <= 0.0)
+    return opacity;
+
+  int const steps = static_cast<int>(std::ceil(shadowSegment.length() / tStep));
+  if (steps <= 0)
+    return opacity;
+
+  for (int i = 0; i < steps; ++i) {
+    double const transmittance = 1.0 - opacity;
+    if (transmittance <= 0.01)
+      return 1.0;
+
+    double const t = shadowSegment.t1 + i * tStep;
+    Sample const sample =
+        shadowSegment.volume->sample(shadowRay.at(t), volumeTrilinear);
+
+    opacity += transmittance * sample.opacity;
+
+    if (opacity > 0.99)
+      return 1.0;
+  }
 
   return opacity;
 }
